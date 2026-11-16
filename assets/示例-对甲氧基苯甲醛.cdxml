@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE cdxml SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd">
+<cdxml CreationProgram="ChemDraw 26.0.0.0" Name="example" BondLength="14.4">
+  <page id="2">
+    <fragment id="3">
+      <n id="10" p="-32.85 0.72" Element="6"/>
+      <n id="11" p="-22.73 -9.52" Element="8"/>
+      <n id="12" p="-8.80 -5.88" Element="6"/>
+      <n id="13" p="-4.99 8.01" Element="6"/>
+      <n id="14" p="8.94 11.65" Element="6"/>
+      <n id="15" p="19.06 1.40" Element="6"/>
+      <n id="16" p="33.00 5.05" Element="6"/>
+      <n id="17" p="43.12 -5.20" Element="8"/>
+      <n id="18" p="15.25 -12.48" Element="6"/>
+      <n id="19" p="1.32 -16.12" Element="6"/>
+      <b id="100" B="10" E="11" Order="1"/>
+      <b id="101" B="11" E="12" Order="1"/>
+      <b id="102" B="12" E="13" Order="1"/>
+      <b id="103" B="13" E="14" Order="2"/>
+      <b id="104" B="14" E="15" Order="1"/>
+      <b id="105" B="15" E="16" Order="1"/>
+      <b id="106" B="16" E="17" Order="2"/>
+      <b id="107" B="15" E="18" Order="2"/>
+      <b id="108" B="18" E="19" Order="1"/>
+      <b id="109" B="19" E="12" Order="2"/>
+    </fragment>
+  </page>
+</cdxml>

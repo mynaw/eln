@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cdxml CreationProgram="ChemDraw 26.0.0.0" BondLength="14.4">
+  <page id="2">
+    <fragment id="3">
+      <n id="10" p="20.99 -7.20" Element="6"/>
+      <n id="11" p="20.99 7.20" Element="6"/>
+      <n id="12" p="8.52 14.40" Element="6"/>
+      <n id="13" p="-3.95 7.20" Element="6"/>
+      <n id="14" p="-3.95 -7.20" Element="6"/>
+      <n id="15" p="8.52 -14.40" Element="6"/>
+      <n id="16" p="-17.65 -11.65" Element="8"/>
+      <n id="17" p="-26.11 0.00" Element="6"/>
+      <n id="18" p="-17.65 11.65" Element="8"/>
+      <b id="100" B="10" E="11" Order="2"/>
+      <b id="101" B="11" E="12" Order="1"/>
+      <b id="102" B="12" E="13" Order="2"/>
+      <b id="103" B="13" E="14" Order="1"/>
+      <b id="104" B="14" E="15" Order="2"/>
+      <b id="105" B="14" E="16" Order="1"/>
+      <b id="106" B="16" E="17" Order="1"/>
+      <b id="107" B="17" E="18" Order="1"/>
+      <b id="108" B="15" E="10" Order="1"/>
+      <b id="109" B="18" E="13" Order="1"/>
+    </fragment>
+    <graphic id="900" BoundingBox="-31.1 -16.6 -12.6 16.6">
+      <ellipse id="901" BoundingBox="-31.1 -16.6 -12.6 16.6"/>
+    </graphic>
+  </page>
+</cdxml>
