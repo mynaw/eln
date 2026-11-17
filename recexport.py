@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import json
 import os
 
 import chem
@@ -62,8 +63,12 @@ def _split_rxn(smi: str):
     return s, ""
 
 
-def gather(store, owner_type: str, oid: int) -> dict | None:
-    """整理一条记录。owner_type: 'sample' | 'reaction'。"""
+def gather(store, owner_type: str, oid: int, att_paths: bool = False) -> dict | None:
+    """整理一条记录。owner_type: 'sample' | 'reaction'。
+
+    att_paths=True 时附带附件清单（文件名 + 完整路径，不含内容），
+    供导出 PDF/DOCX 时在文末打印附件存放在哪里。
+    """
     row = store.sample(oid) if owner_type == "sample" else store.reaction(oid)
     if row is None:
         return None
@@ -104,7 +109,7 @@ def gather(store, owner_type: str, oid: int) -> dict | None:
         # 组成表（带双向计算结果）
         comp = [dict(r) for r in store.components(oid)]
         if comp:
-            head = ["角色", "物质", "当量", "用量", "摩尔量", "实测/g"]
+            head = ["角色", "物质", "当量", "用量", "摩尔量"]
             body = []
             for r in comp:
                 amt = _amt(r["amount"], r["unit"])
@@ -113,13 +118,80 @@ def gather(store, owner_type: str, oid: int) -> dict | None:
                              r.get("s_name") or r.get("label") or "（未关联药剂）",
                              _g(r["equivalents"]) if r["equivalents"] is not None else "",
                              amt,
-                             f"{mmol:.2f}" if mmol is not None else "—",
-                             _g(r["actual"]) if r["actual"] is not None else ""])
+                             f"{mmol:.2f}" if mmol is not None else "—"])
             c["comps"] = {"head": head, "rows": body}
             c["summary"] = stoich.summary_text(comp) or ""
 
+    # 实验笔记块（笔记本里的文字 / 步骤 / 结构 / 表格 / 计算块）
+    c["blocks"] = _blocks_view(store, owner_type, oid)
+
+    # 附件路径清单（默认不收；开关打开时才打印）
+    c["att_paths"] = []
+    if att_paths:
+        try:
+            for a in store.attachments(owner_type, oid):
+                nm = _s(a["title"]) or os.path.basename(a["path"] or "")
+                if _s(a["path"]):
+                    c["att_paths"].append([nm, _s(a["path"])])
+        except Exception:
+            pass
+
     c["exported_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     return c
+
+
+def _blocks_view(store, owner_type: str, oid: int) -> list[dict]:
+    """笔记本块 → 导出用列表（与网页 _block_view 同一套展示规则）。"""
+    out: list[dict] = []
+    n_step = 0
+    try:
+        raw = list(store.blocks(owner_type, oid))
+    except Exception:
+        raw = []
+    for b in raw:
+        try:
+            ct = json.loads(b["content"] or "{}")
+        except (ValueError, TypeError):
+            ct = {}
+        if not isinstance(ct, dict):
+            ct = {}
+        k = b["kind"] or "text"
+        if k == "step":
+            n_step += 1
+            head = f"步骤 {n_step} · {ct.get('title') or '未命名'}"
+            if ct.get("done"):
+                head += "（已完成）"
+            bits = [head]
+            if ct.get("time"):
+                bits.append(f"用时：{ct['time']}")
+            body = (ct.get("body") or "").strip()
+            if body:
+                bits.append(body)
+            out.append({"kind": "step", "head": head, "body": body,
+                        "text": "\n".join(bits)})
+        elif k == "chem":
+            t = " · ".join(x for x in (ct.get("caption"), ct.get("smiles"))
+                           if x).strip()
+            out.append({"kind": "chem", "text": t})
+        elif k == "table":
+            cols = [str(x) for x in (ct.get("cols") or [])]
+            rows = [[str(x) for x in r] for r in (ct.get("rows") or [])]
+            rows = [r + [""] * (len(cols) - len(r)) for r in rows]
+            out.append({"kind": "table", "cols": cols, "rows": rows})
+        elif k == "calc":
+            bits = []
+            if ct.get("expr"):
+                bits.append(ct["expr"])
+            if ct.get("result"):
+                bits.append(f"→ {ct['result']}")
+            if ct.get("note"):
+                bits.append(ct["note"])
+            out.append({"kind": "calc", "text": "\n".join(bits).strip()})
+        else:
+            t = (ct.get("md") or "").strip()
+            if t:
+                out.append({"kind": "text", "text": t})
+    return out
 
 
 def _svg_inner(svg_text: str) -> str:
@@ -287,9 +359,44 @@ def build_docx(c: dict, path: str) -> str:
         for para in c["procedure"].splitlines() or [""]:
             doc.add_paragraph(para)
 
+    blocks = [b for b in (c.get("blocks") or [])
+              if b.get("text") or b.get("kind") == "table"]
+    if blocks:
+        doc.add_heading("实验笔记", level=1)
+        for b in blocks:
+            if b["kind"] == "table" and b.get("cols"):
+                t = doc.add_table(rows=1, cols=len(b["cols"]))
+                t.style = "Table Grid"
+                for cell, text in zip(t.rows[0].cells, b["cols"]):
+                    r = cell.paragraphs[0].add_run(text)
+                    r.font.bold = True
+                    r.font.size = Pt(9)
+                for vals in b["rows"]:
+                    cells = t.add_row().cells
+                    for cell, text in zip(cells, vals):
+                        r = cell.paragraphs[0].add_run(_s(text))
+                        r.font.size = Pt(9)
+                doc.add_paragraph()
+                continue
+            if b["kind"] == "step" and b.get("head"):
+                p = doc.add_paragraph()
+                r = p.add_run(b["head"])
+                r.font.bold = True
+                if b.get("body"):
+                    doc.add_paragraph(b["body"])
+            elif b["kind"] == "chem":
+                doc.add_paragraph("结构：" + (b.get("text") or ""))
+            else:
+                doc.add_paragraph(b.get("text") or "")
+
     if c["note"]:
         doc.add_heading("备注", level=1)
         doc.add_paragraph(c["note"])
+
+    if c.get("att_paths"):
+        doc.add_heading("附件", level=1)
+        for nm, p in c["att_paths"]:
+            doc.add_paragraph(p if os.path.basename(p) == nm else f"{nm}：{p}")
 
     doc.save(path)
     return path
@@ -407,12 +514,13 @@ def build_pdf(c: dict, path: str) -> str:
             except Exception:
                 pass
 
+    style_b = FontFace(family=fam, emphasis="BOLD", size_pt=BODY_PT,
+                       fill_color=(228, 236, 246))
     if c["comps"]:
         head("组成")
-        widths = (22, 58, 20, 40, 26, 24)
-        aligns = ("CENTER", "CENTER", "CENTER", "CENTER", "CENTER", "CENTER")
-        style_b = FontFace(family=fam, emphasis="BOLD", size_pt=BODY_PT,
-                           fill_color=(228, 236, 246))
+        # 五列合计须 ≤ 178mm（A4 宽 210 − 左右边距 16×2），超了会被裁掉
+        widths = (26, 74, 22, 34, 22)
+        aligns = ("CENTER", "CENTER", "CENTER", "CENTER", "CENTER")
         pdf.set_font(fam, size=BODY_PT)
         with pdf.table(col_widths=widths, text_align=aligns,
                        headings_style=style_b, line_height=6.0,
@@ -438,10 +546,55 @@ def build_pdf(c: dict, path: str) -> str:
         pdf.multi_cell(0, LINE_H, c["procedure"], new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
+    blocks = [b for b in (c.get("blocks") or [])
+              if b.get("text") or b.get("kind") == "table"]
+    if blocks:
+        head("实验笔记")
+        for b in blocks:
+            if b["kind"] == "table" and b.get("cols"):
+                ncol = max(1, len(b["cols"]))
+                w = round(178.0 / ncol, 1)
+                pdf.set_font(fam, size=BODY_PT)
+                with pdf.table(col_widths=[w] * ncol,
+                               text_align=["CENTER"] * ncol,
+                               headings_style=style_b, line_height=6.0,
+                               padding=1.5) as table:
+                    hr = table.row()
+                    for t in b["cols"]:
+                        hr.cell(t)
+                    for vals in b["rows"]:
+                        row = table.row()
+                        for v in vals:
+                            row.cell(_s(v))
+                pdf.ln(1.5)
+                continue
+            if b["kind"] == "step" and b.get("head"):
+                pdf.set_font(fam, style="B", size=BODY_PT)
+                pdf.multi_cell(0, LINE_H, b["head"],
+                               new_x="LMARGIN", new_y="NEXT")
+                if b.get("body"):
+                    pdf.set_font(fam, size=BODY_PT)
+                    pdf.multi_cell(0, LINE_H, b["body"],
+                                   new_x="LMARGIN", new_y="NEXT")
+            else:
+                prefix = {"chem": "结构：", "calc": ""}.get(b["kind"], "")
+                pdf.set_font(fam, size=BODY_PT)
+                pdf.multi_cell(0, LINE_H, prefix + (b.get("text") or ""),
+                               new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+        pdf.ln(1)
+
     if c["note"]:
         head("备注")
         pdf.set_font(fam, size=BODY_PT)
         pdf.multi_cell(0, LINE_H, c["note"], new_x="LMARGIN", new_y="NEXT")
+
+    if c.get("att_paths"):
+        head("附件")
+        pdf.set_font(fam, size=BODY_PT)
+        for nm, p in c["att_paths"]:
+            line = p if os.path.basename(p) == nm else f"{nm}：{p}"
+            pdf.multi_cell(0, LINE_H, line, new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(path)
     return path

@@ -13,7 +13,7 @@ import os
 import re
 import tkinter as tk
 import webbrowser
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from paths import app_dir, res_path
 
@@ -92,6 +92,14 @@ class HelpWindow:
         tk.Button(bar, text="导出网页", command=self.export_html, relief="flat",
                   bd=0, bg="#e8eef7", fg=ACCENT, font=(UI_FONT, 9), padx=10,
                   pady=4, cursor="hand2").pack(side="right")
+
+        # 网页模式开关（点一下开，再点一下关；不需要回主窗口）
+        self._web_btn = tk.Button(bar, text="开启网页", command=self.toggle_web,
+                                  relief="flat", bd=0, bg="#e8eef7", fg=ACCENT,
+                                  font=(UI_FONT, 9), padx=10, pady=4,
+                                  cursor="hand2")
+        self._web_btn.pack(side="right", padx=(0, 8))
+        self._sync_web_btn()
 
         body = tk.Frame(self.win, bg=BG)
         body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -317,6 +325,77 @@ class HelpWindow:
             webbrowser.open("file:///" + path.replace("\\", "/"))
         except Exception:
             pass
+
+    # ------------------------------------------------------------ 网页模式开关
+    def _sync_web_btn(self):
+        """按钮外观跟着服务状态走（开着是绿的，关着是蓝的）。"""
+        try:
+            import webapp
+            on = webapp.is_running()
+        except Exception:                                    # noqa: BLE001
+            on = False
+        if not hasattr(self, "_web_btn"):
+            return
+        if on:
+            self._web_btn.configure(text="网页运行中 · 点此关闭",
+                                    bg="#e6f4ea", fg="#1b6f3a")
+        else:
+            self._web_btn.configure(text="开启网页", bg="#e8eef7", fg=ACCENT)
+
+    def toggle_web(self):
+        """点一下开网页模式，再点一下关掉（不用回主窗口）。"""
+        try:
+            import webapp
+        except Exception as exc:                             # noqa: BLE001
+            messagebox.showerror("网页模式", f"加载失败：{exc}", parent=self.win)
+            return
+
+        if webapp.is_running():
+            webapp.stop()
+            self._sync_web_btn()
+            return
+
+        lan = messagebox.askyesnocancel(
+            "开启网页模式",
+            "是否允许同一局域网内的其他电脑 / 手机访问？\n\n"
+            "「否」＝只本机可看（最安全）\n"
+            "「是」＝开放到局域网：口令 + 账户登录（本机没有账户时只靠口令）\n\n"
+            "（端口 8765 起，被占用会自动往后找）",
+            parent=self.win)
+        if lan is None:
+            return
+        try:
+            if lan:
+                import auth
+                fixed = webapp.local_token()
+                token = fixed or webapp.new_token()
+                # 有账户就必须登录，否则拿到链接的人能直接读写整个库
+                acct = auth.has_users()
+                url = webapp.start(host="0.0.0.0", token=token,
+                                   require_auth=True) if acct else \
+                    webapp.start(host="0.0.0.0", token=token)
+                try:                       # 地址直接进剪贴板，方便发到手机
+                    self.win.clipboard_clear()
+                    self.win.clipboard_append(url)
+                except Exception:        # noqa: BLE001
+                    pass
+                messagebox.showinfo(
+                    "局域网访问已开启",
+                    f"本机访问：\n{url}\n\n"
+                    f"访问口令：{token}"
+                    f"{'（本机固定：_local.json）' if fixed else '（随机，重启后变）'}\n\n"
+                    + ("其他设备还要用**自己的账户密码**登录，各自只看到自己的记录。\n\n"
+                       if acct else
+                       "⚠ 当前还没有任何账户，网页免登录：拿到链接的人可直接读写本库。\n\n")
+                    + "地址已复制到剪贴板，可直接发到手机。\n"
+                    "再点一次「网页运行中」按钮即关闭服务。",
+                    parent=self.win)
+            else:
+                webapp.start()
+        except Exception as exc:                             # noqa: BLE001
+            messagebox.showerror("网页模式", f"启动失败：{exc}", parent=self.win)
+            return
+        self._sync_web_btn()
 
 
 # ---------------------------------------------------------------- HTML

@@ -181,8 +181,143 @@ def is_admin(user: dict | None) -> bool:
     return bool(user and user.get("role") == "admin")
 
 
+# ---------------------------------------------------------------- 管理员 / 子账号
+# 约定（2026-11-17）：管理员 = 「当前本地账号」，即 accounts.json 里第一个
+# 建号时沿用根目录数据的账户（data_dir == ""）。管理员账户名不可改、不可删。
+def admin_user() -> dict | None:
+    """返回管理员账户（根账户）；还没有任何账户时返回 None。"""
+    for u in _load()["users"]:
+        if not (u.get("data_dir") or ""):
+            return u
+    return None
+
+
+def is_root(user: dict | None) -> bool:
+    return bool(user) and not ((user or {}).get("data_dir") or "")
+
+
+def ensure_admin_role() -> dict | None:
+    """保证根账户的 role 是 admin（老库可能没有该字段）。启动时调用一次。"""
+    data = _load()
+    changed = False
+    for u in data["users"]:
+        if not (u.get("data_dir") or "") and u.get("role") != "admin":
+            u["role"] = "admin"
+            changed = True
+    if changed:
+        _save(data)
+    return admin_user()
+
+
+def create_sub(name: str, password: str, quota_mb: int = 0) -> dict:
+    """管理员新建子账号。
+
+    与 create_user 的区别：**只存不可逆哈希**（PBKDF2-HMAC-SHA256 + 随机盐），
+    不写 DPAPI「找回密文」副本——子账号密码丢了只能由管理员重置，无法找回。
+    """
+    u = create_user(name, password, role="user")
+    data = _load()
+    for row in data["users"]:
+        if row["id"] == u["id"]:
+            row.pop("recover", None)          # 不留可解密副本
+            row["quota_mb"] = max(0, int(quota_mb or 0))
+            _save(data)
+            row["quota_mb"] = row["quota_mb"]
+            return row
+    return u
+
+
+def rename_user(old: str, new: str) -> dict:
+    """重命名**子账号**（管理员账户名不可改）。只改名字，数据目录不动。"""
+    new = (new or "").strip()
+    if not new:
+        raise AuthError("账户名不能为空。")
+    if any(c in new for c in '\\/:*?"<>|'):
+        raise AuthError("账户名不能包含 \\ / : * ? \" < > | 这些字符。")
+    target = get_user(old)
+    if target is None:
+        raise AuthError("没有这个账户。")
+    if is_root(target):
+        raise AuthError("管理员账户（当前本地账号）的名字不能改。")
+    if get_user(new) and get_user(new)["id"] != target["id"]:
+        raise AuthError("这个账户名已经存在。")
+    data = _load()
+    for u in data["users"]:
+        if u["id"] == target["id"]:
+            u["name"] = new
+            _save(data)
+            return u
+    raise AuthError("没有这个账户。")
+
+
+def delete_user(name: str) -> dict:
+    """删除账户条目（不动它的数据目录，避免误删数据）。管理员账户不可删。"""
+    target = get_user(name)
+    if target is None:
+        raise AuthError("没有这个账户。")
+    if is_root(target):
+        raise AuthError("管理员账户（当前本地账号）不能删除。")
+    data = _load()
+    data["users"] = [u for u in data["users"] if u["id"] != target["id"]]
+    _save(data)
+    return target
+
+
+def set_quota(name: str, quota_mb: int) -> dict:
+    """给子账号分配可用硬盘空间（MB）。0 = 不限制。管理员账户不限额。"""
+    target = get_user(name)
+    if target is None:
+        raise AuthError("没有这个账户。")
+    data = _load()
+    for u in data["users"]:
+        if u["id"] == target["id"]:
+            u["quota_mb"] = max(0, int(quota_mb or 0))
+            _save(data)
+            return u
+    raise AuthError("没有这个账户。")
+
+
+def usage_mb(name: str) -> float:
+    """该账户数据目录的实际占用（MB，向上取一位小数）。"""
+    user = get_user(name)
+    if user is None:
+        return 0.0
+    root = user_data_dir(user)
+    total = 0
+    for dirpath, _dirs, files in os.walk(root):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
+    return round(total / (1024 * 1024), 1)
+
+
+def quota_state(name: str) -> dict:
+    """{"used": 已用MB, "quota": 配额MB（0=不限）, "over": 是否已超}。"""
+    user = get_user(name)
+    if user is None:
+        return {"used": 0.0, "quota": 0, "over": False}
+    quota = int(user.get("quota_mb") or 0)
+    used = usage_mb(name)
+    return {"used": used, "quota": quota,
+            "over": bool(quota and used >= quota)}
+
+
+def quota_left(name: str) -> float:
+    """剩余可用 MB；不限额返回 float('inf')。"""
+    st = quota_state(name)
+    if not st["quota"]:
+        return float("inf")
+    return max(0.0, st["quota"] - st["used"])
+
+
 def set_password(name: str, password: str) -> dict:
-    """重设密码（本机执行）。同步更新可解密副本。"""
+    """重设密码（本机执行）。
+
+    账户原来有「找回密文」副本（管理员/根账户）就同步更新；子账号保持
+    **只存不可逆哈希**，不重新写回可解密副本。
+    """
     if len(password or "") < MIN_PASSWORD:
         raise AuthError(f"密码至少 {MIN_PASSWORD} 位。")
     data = _load()
@@ -192,18 +327,8 @@ def set_password(name: str, password: str) -> dict:
             u["salt"] = salt.hex()
             u["hash"] = _hash(password, salt)
             u["iter"] = PBKDF2_ITER
-            u["recover"] = protect(password.encode("utf-8"))
-            _save(data)
-            return u
-    raise AuthError("没有这个账户。")
-
-
-def delete_user(name: str) -> dict:
-    """删除账户条目（不动它的数据目录，避免误删数据）。"""
-    data = _load()
-    for u in data["users"]:
-        if u.get("name", "").casefold() == (name or "").strip().casefold():
-            data["users"].remove(u)
+            if "recover" in u:
+                u["recover"] = protect(password.encode("utf-8"))
             _save(data)
             return u
     raise AuthError("没有这个账户。")

@@ -1,11 +1,12 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
-title ELN å¤‡ä»½
+title ELN ±¸·Ý
 
 set "PY=python"
+if defined ELN_PYTHON set "PY=%ELN_PYTHON%"
+if not exist "%PY%" set "PY=python"
 
-echo å¤‡ä»½åˆ° _backups\data ä¸Ž _backups\bundle ...
+echo ±¸·Ýµ½ _backups\data Óë _backups\bundle ...
 echo.
 "%PY%" "tools\backup.py" --commit %*
 

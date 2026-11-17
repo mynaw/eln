@@ -1,9 +1,8 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0\..\vendor\ketcher-app"
-title 构建 Ketcher 编辑器
+title ���� Ketcher �༭��
 
-rem 优先用系统里的 node；没有就退回 WorkBuddy 自带的那份（仅本机路径）
+rem ������ϵͳ��� node��û�о��˻� WorkBuddy �Դ����Ƿݣ�������·����
 where npm >nul 2>&1
 if errorlevel 1 (
   if exist "%ProgramFiles%\nodejs\npm.cmd" set "PATH=%ProgramFiles%\nodejs;%PATH%"
@@ -11,30 +10,30 @@ if errorlevel 1 (
 where npm >nul 2>&1
 if errorlevel 1 (
   echo.
-  echo 找不到 npm。请先安装 Node.js 18+ 再运行本脚本。
-  echo Ketcher 只是可选的增强编辑器，不装也不影响 ELN 其它功能。
+  echo �Ҳ��� npm�����Ȱ�װ Node.js 18+ �����б��ű���
+  echo Ketcher ֻ�ǿ�ѡ����ǿ�༭������װҲ��Ӱ�� ELN �������ܡ�
   pause
   exit /b 1
 )
 
 if not exist node_modules (
-  echo 首次构建，安装依赖（约 200 MB，第一次要几分钟）...
+  echo �״ι�������װ������Լ 200 MB����һ��Ҫ�����ӣ�...
   call npm install --no-audit --no-fund
   if errorlevel 1 goto fail
 )
 
-echo 打包中...
+echo �����...
 call npm run build
 if errorlevel 1 goto fail
 
 echo.
-echo 构建完成：vendor\ketcher-app\dist
-echo 回到 ELN 画板点「用 Ketcher 编辑」即可，之后不需要联网。
+echo ������ɣ�vendor\ketcher-app\dist
+echo �ص� ELN ����㡸�� Ketcher �༭�����ɣ�֮����Ҫ������
 pause
 exit /b 0
 
 :fail
 echo.
-echo 构建失败，往上翻看报错。
+echo ����ʧ�ܣ����Ϸ���������
 pause
 exit /b 1

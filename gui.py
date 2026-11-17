@@ -27,6 +27,7 @@ import polarity
 import polaritywin
 import recexport
 import packexport
+import adminwin
 import calwin
 import helpwin
 import notebook
@@ -41,11 +42,32 @@ CLR_BG = "#f4f6f9"
 CLR_CARD = "#ffffff"
 
 # ============================================================
-# 网页 / 浏览器访问开关（2026-11-10 按用户要求暂时停用）
-#   改成 True 即可恢复：工具栏出现「浏览器」按钮，功能代码都在
-#   （webapp.py / webui.py 原样保留，未删除任何实现）
+# 网页 / 浏览器访问开关
+#   2026-11-17 再次按要求隐藏主工具栏按钮（只留帮助窗口顶部「开启网页」+ 启动服务器.bat）。
+#   要恢复到工具栏：改成 True 即可，功能代码一直在（webapp.py / webui.py 未改动）。
 # ============================================================
 WEB_ENABLED = False
+
+# --------------------------------------------------------------- 界面设置
+# 只存"界面偏好"这类无关数据的东西，放在程序目录，跟着文件夹走。
+UI_SETTINGS = os.path.join(app_dir(), "ui_settings.json")
+
+
+def _load_ui_settings() -> dict:
+    try:
+        with open(UI_SETTINGS, encoding="utf-8") as fh:
+            d = json.load(fh)
+            return d if isinstance(d, dict) else {}
+    except Exception:                                        # noqa: BLE001
+        return {}
+
+
+def _save_ui_settings(d: dict) -> None:
+    try:
+        with open(UI_SETTINGS, "w", encoding="utf-8") as fh:
+            json.dump(d, fh, ensure_ascii=False, indent=2)
+    except Exception:                                        # noqa: BLE001
+        pass
 CLR_LINE = "#dde3ea"
 CLR_INK = "#16202c"
 CLR_DIM = "#6b7684"
@@ -275,6 +297,11 @@ class App:
         except Exception:
             pass
 
+        # 界面偏好（目前只有「工具栏是否显示浏览器按钮」）
+        self.ui_settings = _load_ui_settings()
+        self.v_show_web = tk.BooleanVar(
+            value=bool(self.ui_settings.get("show_web_button", WEB_ENABLED)))
+
         self._build()
         self.refresh_collections()
         self.refresh_samples()
@@ -301,23 +328,26 @@ class App:
                              bg=bg, fg=fg, font=(UI, 9), padx=6, pady=5,
                              cursor="hand2", activebackground="#d6e2f5")
 
-        # 按钮顺序（按用户指定）：日历 → 试剂 → 反应 ｜ 导入 → 导出 → Ketcher
-        #                    → 绘制 → 笔记 → 账户 → 备份 → 电子效应 → 帮助
+        # 按钮顺序（2026-11-17 按用户要求）：设置 → 日历 → 药剂 → 反应
+        #                    → Ketcher → 绘制 → [浏览器] → 笔记 → 电子效应 → 帮助
+        # 账户 / 导入 / 导出 / 备份 已收进「设置 ▾」菜单，工具栏不再单列。
+        self._btn_settings = btn(bar, "设置 ▾", self.on_settings_menu,
+                                 "#f2f4f7", CLR_DIM)
+        self._btn_settings.pack(side="left", padx=(0, 4))
+        tk.Frame(bar, bg=CLR_LINE, width=1).pack(side="left", fill="y", padx=8, pady=6)
         btn(bar, "日历", self.on_calendar, "#eef4fb", CLR_ACCENT).pack(side="left", padx=2)
         btn(bar, "药剂", self.on_sample_new, "#e8f4ec", CLR_GREEN).pack(side="left", padx=2)
         btn(bar, "反应", self.on_reaction_new, "#e8f4ec", CLR_GREEN).pack(side="left", padx=2)
         tk.Frame(bar, bg=CLR_LINE, width=1).pack(side="left", fill="y", padx=8, pady=6)
-        btn(bar, "导入", self.on_import_sdf).pack(side="left", padx=2)
-        self._btn_export = btn(bar, "导出 ▾", self.on_export_menu)
-        self._btn_export.pack(side="left", padx=2)
         btn(bar, "Ketcher", self.on_ketcher_toolbar, "#e6f2f4", "#1b6f7a").pack(side="left", padx=2)
         btn(bar, "绘制", self.on_draw_toolbar, "#e8f4ec", CLR_GREEN).pack(side="left", padx=2)
-        # 浏览器访问：按用户要求暂时隐藏；把文件顶部的 WEB_ENABLED 改成 True 即恢复
-        if WEB_ENABLED:
-            btn(bar, "浏览器", self.on_open_web, "#eef4fb", CLR_ACCENT).pack(side="left", padx=2)
-        btn(bar, "笔记", self.on_notebook_toolbar, "#fff4e5", "#a06a1b").pack(side="left", padx=2)
-        btn(bar, "账户", self.on_switch_user, "#f2f4f7", CLR_DIM).pack(side="left", padx=2)
-        btn(bar, "备份", self.on_backup).pack(side="left", padx=2)
+        # 浏览器按钮：默认不显示（网页模式走帮助窗口「开启网页」或 启动服务器.bat）。
+        # 可在「设置 ▾ → 显示『浏览器』按钮」里打开，偏好存 ui_settings.json。
+        self._btn_web = btn(bar, "浏览器", self.on_open_web, "#eef4fb", CLR_ACCENT)
+        self._btn_note = btn(bar, "笔记", self.on_notebook_toolbar, "#fff4e5", "#a06a1b")
+        self._btn_note.pack(side="left", padx=2)
+        if self.v_show_web.get():
+            self._btn_web.pack(side="left", padx=2, before=self._btn_note)
         btn(bar, "电子效应", self.on_effects, "#ede7f6", "#6a4fa3").pack(side="left", padx=(6, 2))
         btn(bar, "帮助", self.on_help, "#fff3e0", CLR_TAG).pack(side="left", padx=2)
 
@@ -1166,6 +1196,15 @@ class App:
             b_add.configure(state="disabled", fg="#b8c0cc", cursor="")
         b_add.pack(side="left", padx=8)
 
+        # 「导出」开关：勾上后导出 PDF/DOCX 时，文末打印附件的路径与文件名
+        if getattr(self, "_att_export_on", False):
+            t_exp, fg_exp = "✓ 导出", "#1a7f37"
+        else:
+            t_exp, fg_exp = "导出", CLR_DIM
+        tk.Button(head, text=t_exp, command=self.on_toggle_att_export,
+                  relief="flat", bd=0, bg=CLR_CARD, fg=fg_exp,
+                  font=(UI, 9), cursor="hand2").pack(side="right")
+
         if not rows:
             tk.Label(parent, text="（还没有附件，双击文件可以直接打开）", bg=CLR_CARD,
                      fg=CLR_DIM, font=(UI, 9)).pack(anchor="w", padx=16, pady=(0, 8))
@@ -1215,6 +1254,13 @@ class App:
         else:
             self.show_reaction(owner_id)
         self._update_status()
+
+    def on_toggle_att_export(self):
+        """切换附件清单开关；开着时导出 PDF/DOCX 会打印附件路径与文件名。"""
+        self._att_export_on = not getattr(self, "_att_export_on", False)
+        cur = self._cur_record()                # 重绘详情页刷新开关样式
+        if cur is not None:
+            (self.show_sample if cur[0] == "sample" else self.show_reaction)(cur[1])
 
     # ------------------------------------------------------------ 绘制区
     def on_draw_toolbar(self):
@@ -1609,25 +1655,34 @@ class App:
             messagebox.showerror("浏览器访问", f"加载失败：{exc}", parent=self.root)
             return
         url = getattr(self, "_web_url", None)
-        if url:
-            webbrowser.open(url)
-            self._flash_status(f"浏览器访问：{url}")
+        if webapp.is_running():
+            url = webapp.current_url() or url or ""
+            if url:
+                webbrowser.open(url)
+                self._flash_status(f"浏览器访问：{url}")
             return
 
         lan = messagebox.askyesnocancel(
             "浏览器访问",
             "是否允许同一局域网内的其他电脑 / 手机访问？\n\n"
             "「否」＝只本机可看（最安全）\n"
-            "「是」＝开放到局域网，自动生成访问口令\n\n"
+            "「是」＝开放到局域网：口令 + 账户登录（本机没有账户时只靠口令）\n\n"
             "（端口 8765 起，被占用会自动往后找）",
             parent=self.root)
         if lan is None:
             return
         try:
             if lan:
-                token = webapp.new_token()
-                self._web_url = webapp.start(host="0.0.0.0", token=token,
-                                             db=self.store.path)
+                fixed = webapp.local_token()
+                token = fixed or webapp.new_token()
+                # 有账户就必须登录：否则拿到链接的人可以直接读写整个库
+                acct = auth.has_users()
+                if acct:
+                    self._web_url = webapp.start(host="0.0.0.0", token=token,
+                                                 require_auth=True)
+                else:
+                    self._web_url = webapp.start(host="0.0.0.0", token=token,
+                                                 db=self.store.path)
                 self._web_token = token
                 try:                      # 顺手把地址复制到剪贴板，方便发到手机
                     self.root.clipboard_clear()
@@ -1638,8 +1693,13 @@ class App:
                     "局域网访问已开启",
                     f"本机访问：\n{self._web_url}\n\n"
                     "其他设备（同一 Wi-Fi）打开上面的地址即可。\n"
-                    f"访问口令：{token}\n\n"
-                    "地址已复制到剪贴板，可直接发到手机。\n"
+                    f"访问口令：{token}"
+                    f"{'（本机固定：_local.json）' if fixed else '（随机，重启后变）'}\n\n"
+                    + ("其他人还要用**自己的账户密码**登录，各自只看到自己的记录；\n"
+                       "把链接发给别人不会把你这本库给他。\n\n" if acct else
+                       "⚠ 当前还没有任何账户，网页免登录：\n"
+                       "拿到这个链接的人可以直接读写本库，别发给不可信的人。\n\n")
+                    + "地址已复制到剪贴板，可直接发到手机。\n"
                     "提示：重启程序或关闭 ELN 后失效；\n"
                     "若手机打不开，检查 Windows 防火墙是否允许 Python 的专用网络。",
                     parent=self.root)
@@ -1650,9 +1710,12 @@ class App:
             messagebox.showerror("浏览器访问", f"启动失败：{exc}", parent=self.root)
 
     # ------------------------------------------------------------ 导入导出
-    def on_export_menu(self):
-        """合并的导出入口：记录文档 + 可迁移包 + 数据交换。"""
-        m = tk.Menu(self.root, tearoff=0, font=(UI, 9))
+    def build_export_menu(self, parent):
+        """构造「导出」子菜单（记录文档 + 可迁移包 + 数据交换）。
+
+        2026-11-17 起从「设置 ▾ → 导出」级联弹出，不再有独立的工具栏按钮。
+        """
+        m = tk.Menu(parent, tearoff=0, font=(UI, 9))
         m.add_command(label="当前记录 → PDF…", command=self.on_export_pdf)
         m.add_command(label="当前记录 → DOCX…", command=self.on_export_docx)
         m.add_separator()
@@ -1667,8 +1730,13 @@ class App:
         m.add_separator()
         m.add_command(label="药剂表 → CSV…（当前列表）", command=self.on_export_csv)
         m.add_command(label="药剂结构 → SDF…（当前列表）", command=self.on_export_sdf)
-        x = self._btn_export.winfo_rootx()
-        y = self._btn_export.winfo_rooty() + self._btn_export.winfo_height()
+        return m
+
+    def on_export_menu(self):
+        """兼容入口：在「设置 ▾」按钮下方直接弹出导出菜单。"""
+        m = self.build_export_menu(self.root)
+        x = self._btn_settings.winfo_rootx()
+        y = self._btn_settings.winfo_rooty() + self._btn_settings.winfo_height()
         try:
             m.tk_popup(x, y)
         finally:
@@ -1695,7 +1763,8 @@ class App:
         if not path:
             return
         try:
-            content = recexport.gather(self.store, owner_type, oid)
+            content = recexport.gather(self.store, owner_type, oid,
+                                       att_paths=getattr(self, "_att_export_on", False))
             if content is None:
                 messagebox.showwarning("记录不存在", "这条记录可能已被删除。",
                                        parent=self.root)
@@ -1825,6 +1894,57 @@ class App:
         messagebox.showinfo("备份完成", f"已保存到\n{path}\n\n"
                                         "注意：附件单独存在 attachments/ 目录，要一起备份。",
                             parent=self.root)
+
+    # ------------------------------------------------------------ 设置
+    def build_settings_menu(self, parent=None):
+        """构造「设置 ▾」菜单：账户 / 导入 / 导出 / 备份 + 界面开关 + 帮助入口。
+
+        2026-11-17 按用户要求：这四个入口从工具栏收进菜单，避免一排按钮太挤。
+        """
+        m = tk.Menu(parent or self.root, tearoff=0, font=(UI, 9))
+        who = (self.user or {}).get("name", "")
+        if who:
+            m.add_command(label=f"当前账户：{who}", state="disabled")
+            m.add_separator()
+        m.add_command(label="切换账户…", command=self.on_switch_user)
+        if auth.is_root(self.user):
+            m.add_command(label="管理员账号…",
+                          command=self.on_admin_accounts)
+        m.add_separator()
+        m.add_command(label="导入…", command=self.on_import_sdf)
+        m.add_cascade(label="导出…", menu=self.build_export_menu(m))
+        m.add_command(label="备份…", command=self.on_backup)
+        m.add_separator()
+        m.add_checkbutton(label="显示「浏览器」按钮",
+                          variable=self.v_show_web,
+                          command=self.apply_web_btn_setting)
+        m.add_separator()
+        m.add_command(label="帮助（F1）", command=self.on_help)
+        return m
+
+    def on_settings_menu(self):
+        m = self.build_settings_menu()
+        x = self._btn_settings.winfo_rootx()
+        y = self._btn_settings.winfo_rooty() + self._btn_settings.winfo_height()
+        try:
+            m.tk_popup(x, y)
+        finally:
+            m.grab_release()
+
+    def apply_web_btn_setting(self):
+        """勾选/取消「显示浏览器按钮」，立即生效并记住。"""
+        on = bool(self.v_show_web.get())
+        self.ui_settings["show_web_button"] = on
+        _save_ui_settings(self.ui_settings)
+        try:
+            if on:
+                self._btn_web.pack(side="left", padx=2, before=self._btn_note)
+            else:
+                self._btn_web.pack_forget()
+            self._flash_status(
+                "设置已保存：工具栏" + ("显示" if on else "隐藏") + "「浏览器」按钮")
+        except Exception:                                    # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------ 增删改（占位，由 dialogs 模块实现）
     def on_sample_new(self):
@@ -2114,6 +2234,14 @@ class App:
             pass
         self._help_win = helpwin.open_help(self.root)
 
+    def on_admin_accounts(self):
+        """管理员账号管理：新建/删除/重置子账号、分配硬盘空间（adminwin）。"""
+        if not auth.is_root(self.user):
+            messagebox.showinfo("仅管理员", "只有管理员（当前本地账号）能打开这个窗口。",
+                                parent=self.root)
+            return
+        adminwin.AdminDialog(self.root, self.user)
+
     def on_switch_user(self):
         """切换账户：清掉 30 天会话并重启，让新账户从启动就加载自己的数据目录。"""
         if not messagebox.askyesno(
@@ -2269,6 +2397,7 @@ def main():
     if user is None:                   # 登录页点了取消
         root.destroy()
         return
+    auth.ensure_admin_role()           # 保证根账户 role=admin（老库补字段）
     auth.apply_user(user)              # ★ 必须在 App 创建 Store 之前切数据目录
     root.deiconify()
     App(root, user)

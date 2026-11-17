@@ -13,9 +13,17 @@ attachments/
 cas_cache.json
 error.log
 selftest-result.txt
+firewall_log.txt
+# 界面偏好（每台机器不同，程序缺省会自己重建）
+ui_settings.json
 
 # 本机快捷方式（含绝对路径，换机器即失效，用 make_shortcut.py 重建）
 *.lnk
+
+# 本机配置（含环境相关的路径与口令，绝不进版本库）
+#   _local.json 里可放 {"web_token": "..."} 固定局域网访问口令；
+#   提交到 GitHub 的永远是「不固定口令」的版本。
+_local.*
 
 # ---------------------------------------------------------------
 # Python / 构建产物

@@ -35,6 +35,7 @@
 
 ![画板](assets/drawpad.png)
 ![实验笔记](assets/notebook.png)
+![电子效应分析](assets/effects.png)
 
 ## 获取与运行
 
@@ -82,7 +83,9 @@ cd vendor/ketcher-app && npm ci && npm run build
   NCI Cactus / PubChem 的公开接口，结果缓存在 `cas_cache.json`，可随时删除。
 - **数据在哪**：程序目录下的 `eln.db`（SQLite 单文件）+ `attachments/`（附件副本）。
   整个文件夹拷走就是完整迁移，`备份.bat` 会打包成 zip。
-- **密码**：账户密码用加盐哈希 + Windows DPAPI 存储，不上传任何地方。
+- **密码**：账户密码用加盐哈希（PBKDF2-HMAC-SHA256）+ Windows DPAPI 存储，不上传任何地方。
+- **账户登录**：本机可建多个账户，各自独立 `eln.db` 与附件目录，互不可见；
+  登录页支持「记住我」30 天免登录，也能一键退出（清除会话）。
 - **多人共用**：不建议直接共享同一个库（SQLite 单文件写入）。多设备请用 SDF/CSV 汇总，
   或启用内置的网页服务模式（见手册）。
 
